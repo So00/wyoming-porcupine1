@@ -211,7 +211,6 @@ class Porcupine1EventHandler(AsyncEventHandler):
         self.detected = False
 
         self.detector: Optional[Detector] = None
-        self.keyword_name: str = ""
         self.chunk_format: str = ""
         self.bytes_per_chunk: int = 0
 
@@ -286,20 +285,19 @@ class Porcupine1EventHandler(AsyncEventHandler):
         if self.detector is not None:
             # Return detector to cache
             async with self.state.detector_lock:
-                self.state.detector_cache[self.keyword_name].append(self.detector)
+                # self.state.detector_cache[self.keyword_name].append(self.detector)
                 self.detector = None
-                _LOGGER.debug(
-                    "Detector for %s returned to cache (%s)",
-                    self.keyword_name,
-                    len(self.state.detector_cache[self.keyword_name]),
-                )
+                # _LOGGER.debug(
+                #     "Detector for %s returned to cache (%s)",
+                #     self.keyword_name,
+                #     len(self.state.detector_cache[self.keyword_name]),
+                # )
 
-    async def _load_keyword(self, keyword_name: str):
+    async def _load_keyword(self):
         # Here we set self.detector, this could be self.detectors
         self.detector = await self.state.get_porcupine(
             self.cli_args.sensitivity
         )
-        self.keyword_name = keyword_name
         self.chunk_format = "h" * self.detector.porcupine.frame_length
         self.bytes_per_chunk = self.detector.porcupine.frame_length * 2
 

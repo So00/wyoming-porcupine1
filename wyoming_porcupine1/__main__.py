@@ -52,33 +52,37 @@ class State:
         self.detector_cache: Dict[str, List[Detector]] = defaultdict(list)
         self.detector_lock = asyncio.Lock()
 
-    async def get_porcupine(self, keyword_name: str, sensitivity: float) -> Detector:
-        keyword = self.keywords.get(keyword_name)
-        if keyword is None:
-            raise ValueError(f"No keyword {keyword_name}")
+    # We set only one keyword_name here, could be multiple
+    async def get_porcupine(self, sensitivity: float) -> Detector:
+        if self.keywords is None:
+            raise ValueError(f"No keywords")
 
         # Check cache first for matching detector
-        async with self.detector_lock:
-            detectors = self.detector_cache.get(keyword_name)
-            if detectors:
-                detector = next(
-                    (d for d in detectors if d.sensitivity == sensitivity), None
-                )
-                if detector is not None:
-                    # Remove from cache for use
-                    detectors.remove(detector)
+        # async with self.detector_lock:
+        #     detectors = self.detector_cache.get(keyword_name)
+        #     if detectors:
+        #         detector = next(
+        #             (d for d in detectors if d.sensitivity == sensitivity), None
+        #         )
+        #         if detector is not None:
+        #             # Remove from cache for use
+        #             detectors.remove(detector)
 
-                    _LOGGER.debug(
-                        "Using detector for %s from cache (%s)",
-                        keyword_name,
-                        len(detectors),
-                    )
-                    return detector
+        #             _LOGGER.debug(
+        #                 "Using detector for %s from cache (%s)",
+        #                 keyword_name,
+        #                 len(detectors),
+        #             )
+        #             return detector
 
-        _LOGGER.debug("Loading %s for %s", keyword.name, keyword.language)
+        # _LOGGER.debug("Loading %s for %s", keyword.name, keyword.language)
+        # We just set one keyword in keyword_paths, could be multiple
+        keywords_paths = []
+        for keyword in keywords:
+            keyword_paths.append(keyword.model_path)
         porcupine = pvporcupine.create(
             model_path=str(self.pv_lib_paths[keyword.language]),
-            keyword_paths=[str(keyword.model_path)],
+            keyword_paths=keyword_paths,
             sensitivities=[sensitivity],
         )
 
@@ -88,6 +92,7 @@ class State:
 async def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser()
+    # since default is stio, server launched is https://github.com/rhasspy/wyoming/blob/e61742fc40690a7a66c3c1fbcf5fee665a633189/wyoming/server.py#L85
     parser.add_argument("--uri", default="stdio://", help="unix:// or tcp://")
     parser.add_argument(
         "--data-dir", default=_DIR / "data", help="Path to directory lib/resources"
@@ -166,6 +171,8 @@ async def main() -> None:
         ],
     )
 
+    # PV lib paths is all the path of the files ending with .pv
+    # Keywords is all the keywords loaded with .ppn files
     state = State(pv_lib_paths=pv_lib_paths, keywords=keywords)
 
     _LOGGER.info("Ready")
@@ -174,13 +181,13 @@ async def main() -> None:
     server = AsyncServer.from_uri(args.uri)
 
     try:
+        # The run function is this one https://github.com/rhasspy/wyoming/blob/e61742fc40690a7a66c3c1fbcf5fee665a633189/wyoming/server.py#L31
         await server.run(partial(Porcupine1EventHandler, wyoming_info, args, state))
     except KeyboardInterrupt:
         pass
 
 
 # -----------------------------------------------------------------------------
-
 
 class Porcupine1EventHandler(AsyncEventHandler):
     """Event handler for clients."""
@@ -216,6 +223,7 @@ class Porcupine1EventHandler(AsyncEventHandler):
             _LOGGER.debug("Sent info to client: %s", self.client_id)
             return True
 
+        # I guess we check the event here if it's detected :thinking:
         if Detect.is_type(event.type):
             detect = Detect.from_event(event)
             if detect.names:
@@ -238,14 +246,19 @@ class Porcupine1EventHandler(AsyncEventHandler):
                 unpacked_chunk = struct.unpack_from(
                     self.chunk_format, self.audio_buffer[: self.bytes_per_chunk]
                 )
+                # Here we get the result of the actual detected keywords
+                # That could look something like that actually https://github.com/Picovoice/porcupine/blob/1462f5c8c7a8985fca50eec350deaef973407e67/demo/python/porcupine_demo_file.py#L138
                 keyword_index = self.detector.porcupine.process(unpacked_chunk)
                 if keyword_index >= 0:
                     _LOGGER.debug(
-                        "Detected %s from client %s", self.keyword_name, self.client_id
+                        "Detected %s from client %s", self.state.keywords[keyword_index].name, self.client_id
                     )
+                    # Here we may need to write an event like here for detection of assistant needed
+                    # Or an event on mqtt for wake words who will do an action
+                    # If we can do something in config for that, awesome, but first, let's get it work
                     await self.write_event(
                         Detection(
-                            name=self.keyword_name, timestamp=chunk.timestamp
+                            name=self.state.keywords[keyword_index].name, timestamp=chunk.timestamp
                         ).event()
                     )
 
@@ -282,8 +295,9 @@ class Porcupine1EventHandler(AsyncEventHandler):
                 )
 
     async def _load_keyword(self, keyword_name: str):
+        # Here we set self.detector, this could be self.detectors
         self.detector = await self.state.get_porcupine(
-            keyword_name, self.cli_args.sensitivity
+            self.cli_args.sensitivity
         )
         self.keyword_name = keyword_name
         self.chunk_format = "h" * self.detector.porcupine.frame_length

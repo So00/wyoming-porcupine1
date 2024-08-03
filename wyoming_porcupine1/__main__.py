@@ -133,6 +133,8 @@ async def main() -> None:
 
     # name -> keyword
     keywords: Dict[str, Keyword] = {}
+    _LOGGER.debug('Files pattern ppn')
+    _LOGGER.debug((args.data_dir / "resources").rglob("*.ppn"))
     for kw_path in (args.data_dir / "resources").rglob("*.ppn"):
         kw_system = kw_path.stem.split("_")[-1]
         if kw_system != args.system:
@@ -142,6 +144,8 @@ async def main() -> None:
         kw_name = kw_path.stem.rsplit("_", maxsplit=1)[0]
         keywords[kw_name] = Keyword(language=kw_lang, name=kw_name, model_path=kw_path)
 
+    _LOGGER.debug('List of keywords')
+    _LOGGER.debug(keywords)
     wyoming_info = Info(
         wake=[
             WakeProgram(

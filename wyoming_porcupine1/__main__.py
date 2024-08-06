@@ -55,6 +55,7 @@ class State:
     # We set only one keyword_name here, could be multiple
     async def get_porcupine(self, sensitivity: float) -> Detector:
         if self.keywords is None:
+            _LOGGER.debug("No keywords")
             raise ValueError(f"No keywords")
 
         # Check cache first for matching detector
@@ -77,6 +78,7 @@ class State:
 
         # _LOGGER.debug("Loading %s for %s", keyword.name, keyword.language)
         # We just set one keyword in keyword_paths, could be multiple
+        _LOGGER.debug("get pocrupine")
         keywords_paths = []
         for keyword in keywords:
             keyword_paths.append(keyword.model_path)
@@ -228,14 +230,19 @@ class Porcupine1EventHandler(AsyncEventHandler):
 
         # I guess we check the event here if it's detected :thinking:
         if Detect.is_type(event.type):
+            _LOGGER.debug("Event is detect type")
             detect = Detect.from_event(event)
             if detect.names:
+                _LOGGER.debug("We load name %s", detect.names[0])
                 # TODO: use all names
                 await self._load_keyword(detect.names[0])
         elif AudioStart.is_type(event.type):
+            _LOGGER.debug("Audio just start. Detected pass to false")
             self.detected = False
         elif AudioChunk.is_type(event.type):
+            _LOGGER.debug("Audio chuck type")
             if self.detector is None:
+                _LOGGER.debug("Self detector was none, load keyword")
                 # Default keyword
                 await self._load_keyword(DEFAULT_KEYWORD)
 
@@ -252,10 +259,9 @@ class Porcupine1EventHandler(AsyncEventHandler):
                 # Here we get the result of the actual detected keywords
                 # That could look something like that actually https://github.com/Picovoice/porcupine/blob/1462f5c8c7a8985fca50eec350deaef973407e67/demo/python/porcupine_demo_file.py#L138
                 keyword_index = self.detector.porcupine.process(unpacked_chunk)
+                _LOGGER.debug("Keyword index in loop %d", keyword_index)
                 if keyword_index >= 0:
-                    _LOGGER.debug(
-                        "Detected %s from client %s", self.state.keywords[keyword_index].name, self.client_id
-                    )
+                    _LOGGER.debug("Detected %s from client %s", self.state.keywords[keyword_index].name, self.client_id)
                     # Here we may need to write an event like here for detection of assistant needed
                     # Or an event on mqtt for wake words who will do an action
                     # If we can do something in config for that, awesome, but first, let's get it work
@@ -268,14 +274,14 @@ class Porcupine1EventHandler(AsyncEventHandler):
                 self.audio_buffer = self.audio_buffer[self.bytes_per_chunk :]
 
         elif AudioStop.is_type(event.type):
+            _LOGGER.debug("Audio stop")
             # Inform client if not detections occurred
             if not self.detected:
+                _LOGGER.debug("Nothing was detected")
                 # No wake word detections
                 await self.write_event(NotDetected().event())
 
-                _LOGGER.debug(
-                    "Audio stopped without detection from client: %s", self.client_id
-                )
+                _LOGGER.debug("Audio stopped without detection from client: %s", self.client_id)
 
             return False
         else:

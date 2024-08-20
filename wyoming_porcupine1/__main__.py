@@ -80,11 +80,11 @@ class State:
         # We just set one keyword in keyword_paths, could be multiple
         _LOGGER.debug("get pocrupine")
         keywords_paths = []
-        for keyword in keywords:
-            keyword_paths.append(keyword.model_path)
+        for keyword in self.keywords:
+            keywords_paths.append(keyword.model_path)
         porcupine = pvporcupine.create(
             model_path=str(self.pv_lib_paths[keyword.language]),
-            keyword_paths=keyword_paths,
+            keyword_paths=keywords_paths,
             sensitivities=[sensitivity],
         )
 

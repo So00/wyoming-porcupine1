@@ -5,6 +5,7 @@ import logging
 import platform
 import struct
 import time
+from pprint import pformat
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import partial
@@ -78,14 +79,18 @@ class State:
 
         # _LOGGER.debug("Loading %s for %s", keyword.name, keyword.language)
         # We just set one keyword in keyword_paths, could be multiple
-        _LOGGER.debug("get pocrupine")
         keywords_paths = []
+
+        # /!\ On ne peut charger QUE des path dont le language est le même que celui de la lib utilisé, sinon on a une ValueError
         for keyword in self.keywords:
-            keywords_paths.append(keyword.model_path)
+            if (self.keywords[keyword].language == "en"):
+                keywords_paths.append(str(self.keywords[keyword].model_path))
+        _LOGGER.debug("pv_lib_path: %s \n keywords_path %s", pformat(self.pv_lib_paths), pformat(str(keywords_paths[0])))
         porcupine = pvporcupine.create(
-            model_path=str(self.pv_lib_paths[keyword.language]),
+            model_path=str(self.pv_lib_paths["en"]),
+            # keyword_paths=[str(self.keywords['alexa'].model_path), str(self.keywords['computer'].model_path)],
             keyword_paths=keywords_paths,
-            sensitivities=[sensitivity],
+            # sensitivities=[sensitivity] * len(keywords_paths),
         )
 
         return Detector(porcupine, sensitivity)
@@ -235,7 +240,7 @@ class Porcupine1EventHandler(AsyncEventHandler):
             if detect.names:
                 _LOGGER.debug("We load name %s", detect.names[0])
                 # TODO: use all names
-                await self._load_keyword(detect.names[0])
+                await self._load_keyword()
         elif AudioStart.is_type(event.type):
             _LOGGER.debug("Audio just start. Detected pass to false")
             self.detected = False
@@ -244,7 +249,7 @@ class Porcupine1EventHandler(AsyncEventHandler):
             if self.detector is None:
                 _LOGGER.debug("Self detector was none, load keyword")
                 # Default keyword
-                await self._load_keyword(DEFAULT_KEYWORD)
+                await self._load_keyword()
 
             assert self.detector is not None
 
@@ -256,18 +261,32 @@ class Porcupine1EventHandler(AsyncEventHandler):
                 unpacked_chunk = struct.unpack_from(
                     self.chunk_format, self.audio_buffer[: self.bytes_per_chunk]
                 )
+                # for detector in self.detectors:
+                #   keyword_index = detector.porcupine.process(unpacked_chunk)
+                #   _LOGGER.debug("Keyword index in loop %d", keyword_index)
+                #   if keyword_index >= 0:
+                #       _LOGGER.debug("Detected keyword %s", detector.keyword)
+                #       # You can add additional logic here to handle the detected keyword
+                #       await self.write_event(
+                #         Detection(
+                #             name=detector.keyword, timestamp=chunk.timestamp
+                #         ).event()
+                #       )
+
                 # Here we get the result of the actual detected keywords
                 # That could look something like that actually https://github.com/Picovoice/porcupine/blob/1462f5c8c7a8985fca50eec350deaef973407e67/demo/python/porcupine_demo_file.py#L138
                 keyword_index = self.detector.porcupine.process(unpacked_chunk)
                 _LOGGER.debug("Keyword index in loop %d", keyword_index)
                 if keyword_index >= 0:
-                    _LOGGER.debug("Detected %s from client %s", self.state.keywords[keyword_index].name, self.client_id)
+                    # TODO: add logic here to handle the detected keyword
+                    # _LOGGER.debug("Detected %s from client %s", self.state.keywords[keyword_index].name, self.client_id)
                     # Here we may need to write an event like here for detection of assistant needed
                     # Or an event on mqtt for wake words who will do an action
                     # If we can do something in config for that, awesome, but first, let's get it work
                     await self.write_event(
                         Detection(
-                            name=self.state.keywords[keyword_index].name, timestamp=chunk.timestamp
+                          # TODO: remove hard coded value
+                            name='alexa', timestamp=chunk.timestamp
                         ).event()
                     )
 
@@ -310,7 +329,6 @@ class Porcupine1EventHandler(AsyncEventHandler):
         )
         self.chunk_format = "h" * self.detector.porcupine.frame_length
         self.bytes_per_chunk = self.detector.porcupine.frame_length * 2
-
 
 # -----------------------------------------------------------------------------
 
